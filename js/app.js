@@ -1,4 +1,4 @@
-import { ACCOUNT_DEFS, getSnapshot, parsePesos, recordMovement, saveStartingBalances, todayLocal, validDate } from './db.js';
+import { ACCOUNT_DEFS, getSnapshot, parsePesos, recordMovement, saveStartingBalances, todayLocal, validDate } from './db.js?v=3';
 
 const view = document.getElementById('view');
 const message = document.getElementById('message');
@@ -323,7 +323,7 @@ async function start() {
       if (event.target.id === 'amount') updateAvailable();
     });
     if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-      navigator.serviceWorker.register('./sw.js').catch(() => {});
+      navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(() => {});
     }
   } catch (error) {
     view.innerHTML = pageHeader('Storage unavailable', 'Unable to open Money Tracker') +
