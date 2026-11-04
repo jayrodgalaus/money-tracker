@@ -24,18 +24,33 @@ button, a { touch-action: manipulation; }
 .page-stage { position: relative; isolation: isolate; }
 .page-panel { width: 100%; }
 .page-panel.is-leaving { position: absolute; inset: 0; width: 100%; pointer-events: none; }
-.page-panel.is-leaving-forward { z-index: 1; animation: page-exit-forward 280ms ease both; }
-.page-panel.is-entering-forward { position: relative; z-index: 2; animation: page-enter-forward 280ms cubic-bezier(.2,.75,.2,1) both; }
-.page-panel.is-leaving-back { z-index: 2; animation: page-exit-back 280ms cubic-bezier(.2,.75,.2,1) both; }
-.page-panel.is-entering-back { position: relative; z-index: 1; animation: page-enter-back 280ms ease both; }
-.page-panel.is-leaving-lateral { z-index: 1; animation: page-exit-lateral 240ms ease both; }
-.page-panel.is-entering-lateral { position: relative; z-index: 2; animation: page-enter-lateral 240ms ease both; }
-@keyframes page-enter-forward { from { opacity: .7; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
-@keyframes page-exit-forward { from { opacity: 1; transform: translateX(0); } to { opacity: .7; transform: translateX(-16%); } }
-@keyframes page-exit-back { from { opacity: 1; transform: translateX(0); } to { opacity: .9; transform: translateX(105%); } }
-@keyframes page-enter-back { from { opacity: .8; transform: translateX(-14%); } to { opacity: 1; transform: translateX(0); } }
-@keyframes page-exit-lateral { from { opacity: 1; transform: translateX(0); } to { opacity: .4; transform: translateX(-8%); } }
-@keyframes page-enter-lateral { from { opacity: .4; transform: translateX(12%); } to { opacity: 1; transform: translateX(0); } }
+/* Offcanvas-style navigation: the underlying page stays still while a full,
+   opaque panel slides in from the right or back out to the right. */
+.page-panel.is-leaving-forward,
+.page-panel.is-leaving-lateral { z-index: 1; }
+.page-panel.is-entering-forward,
+.page-panel.is-entering-lateral {
+  position: relative;
+  z-index: 2;
+  background: var(--paper);
+  min-height: 100dvh;
+  animation: page-slide-in-right 300ms cubic-bezier(.2, .75, .2, 1) both;
+}
+.page-panel.is-leaving-back {
+  z-index: 2;
+  background: var(--paper);
+  min-height: 100dvh;
+  animation: page-slide-out-right 300ms cubic-bezier(.2, .75, .2, 1) both;
+}
+.page-panel.is-entering-back { position: relative; z-index: 1; }
+@keyframes page-slide-in-right {
+  from { transform: translate3d(100vw, 0, 0); }
+  to { transform: translate3d(0, 0, 0); }
+}
+@keyframes page-slide-out-right {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(100vw, 0, 0); }
+}
 .page-heading { margin: 0 0 18px; }
 .eyebrow { text-transform: uppercase; font-weight: 800; letter-spacing: .12em; font-size: .67rem; color: var(--teal); margin: 0 0 7px; }
 .page-title { font-size: clamp(1.55rem, 5.5vw, 2.15rem); line-height: 1.2; letter-spacing: -.05em; font-weight: 800; margin: 0; }

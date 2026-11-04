@@ -1,4 +1,4 @@
-import { ACCOUNT_DEFS, getSnapshot, parsePesos, recordMovement, saveStartingBalances, todayLocal, validDate } from './db.js?v=4';
+import { ACCOUNT_DEFS, getSnapshot, parsePesos, recordMovement, saveStartingBalances, todayLocal, validDate } from './db.js?v=5';
 
 const view = document.getElementById('view');
 const stage = document.getElementById('page-stage');
@@ -81,13 +81,16 @@ function displayPage(html, path, previousScroll = 0) {
     next.className = 'page-panel';
     stage.replaceChildren(next);
   };
-  next.addEventListener('animationend', (event) => {
-    if (event.target === next) {
+  // Forward and peer navigation animate the new page; back navigation
+  // animates the outgoing page, leaving the destination still beneath it.
+  const animatedPanel = direction === 'back' ? previous : next;
+  animatedPanel.addEventListener('animationend', (event) => {
+    if (event.target === animatedPanel) {
       clearTimeout(transitionTimeout);
       finish();
     }
   }, { once: true });
-  transitionTimeout = setTimeout(finish, 400);
+  transitionTimeout = setTimeout(finish, 380);
 }
 
 function pesos(cents) { return currency.format(cents / 100); }
