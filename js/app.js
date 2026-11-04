@@ -1,4 +1,5 @@
-import { ACCOUNT_DEFS, getSnapshot, parsePesos, recordMovement, saveStartingBalances, todayLocal, validDate } from './db.js?v=5';
+import { ACCOUNT_DEFS, getSnapshot, parsePesos, recordMovement, saveStartingBalances, addBank, todayLocal, validDate } from './db.js?v=6';
+import { loadBankDirectory } from './bank-directory.js?v=6';
 
 const view = document.getElementById('view');
 const stage = document.getElementById('page-stage');
@@ -14,6 +15,8 @@ let activePanel;
 let currentPath;
 let transitionTimeout;
 let lastScrollY = window.scrollY;
+let suggestionMatches = [];
+let selectedSuggestion = -1;
 
 // Keep the bottom tabs available when scrolling upward or navigating.
 function showBottomNav() {
@@ -34,6 +37,7 @@ function onScroll() {
 
 // Top-level tabs are peers. Ledger, accounts and Initialize are deeper screens.
 function pageDepth(path) {
+  if (path === '/settings/initialize/banks/add') return 3;
   if (path === '/settings/initialize/banks' || path === '/settings/initialize/on-hand' || path.startsWith('/record/')) return 2;
   if (path === '/ledger' || path.startsWith('/account/') || path === '/settings/initialize') return 1;
   return 0;
@@ -256,7 +260,7 @@ function initializePage() {
     pageHeader('Initialize', 'Set starting balances', 'Choose which balances to initialize or update.') +
     '<div class="settings-list">' +
     '<a class="settings-link" href="#/settings/initialize/banks"><span class="account-avatar" aria-hidden="true">▦</span>' +
-    '<span class="account-description"><strong>Banks<small>BDO, BPI, GCash, GoTyme, MariBank, OwnBank, RCBC, Wise</small></strong></span><span class="chevron" aria-hidden="true">›</span></a>' +
+    '<span class="account-description"><strong>Banks<small>View, initialize, or add bank accounts</small></strong></span><span class="chevron" aria-hidden="true">›</span></a>' +
     '<a class="settings-link" href="#/settings/initialize/on-hand"><span class="account-avatar cash" aria-hidden="true">₱</span>' +
     '<span class="account-description"><strong>On-hand<small>Initialize physical cash</small></strong></span><span class="chevron" aria-hidden="true">›</span></a></div>' +
     '<div class="info-panel">Saving a different balance creates a dated ledger adjustment. Adjustments do not change monthly cash-in or cash-out totals.</div>';
@@ -272,9 +276,97 @@ function bankInitializePage() {
     pageHeader('Initialize', 'Bank balances', 'Set the current amount in each bank or e-wallet.') +
     '<form id="banks-form" class="form-panel" novalidate>' +
     bankAccounts().map(balanceInput).join('') +
+    '<div class="bank-add-slot"><a class="bank-add-button" href="#/settings/initialize/banks/add" aria-label="Add another bank" title="Add another bank">+</a></div>' +
     '<p id="form-error" class="field-error" role="alert" hidden></p>' +
     '<button class="btn-primary-custom mt-3" type="submit">Save bank balances</button></form>' +
     '<div class="info-panel">Use each account\'s current balance. Changing an amount creates an adjustment in the ledger.</div>';
+}
+function addBankPage() {
+  return backLink('/settings/initialize/banks', 'Bank balances') +
+    pageHeader('Initialize', 'Add another bank', 'Choose a bank from the directory or enter your own name.') +
+    '<form id="new-bank-form" class="form-panel" novalidate>' +
+    '<div class="field bank-combobox"><label for="bank-name">Bank name</label>' +
+    '<div class="bank-search-control"><input class="form-control" type="text" id="bank-name" name="bank-name" role="combobox" ' +
+    'aria-autocomplete="list" aria-expanded="false" aria-controls="bank-suggestions" ' +
+    'aria-haspopup="listbox" autocomplete="off" maxlength="120" placeholder="Start typing a bank name" required>' +
+    '<div id="bank-suggestions" class="bank-suggestions" role="listbox" aria-label="Matching banks" hidden></div></div>' +
+    '<p class="field-help">Suggestions come from your bank directory. Other bank names are also accepted.</p></div>' +
+    '<div class="field"><label for="initial-amount">Initial amount (₱)</label>' +
+    '<input class="form-control" type="number" id="initial-amount" name="initial-amount" ' +
+    'min="0" step="0.01" inputmode="decimal" value="0.00" required></div>' +
+    '<p id="form-error" class="field-error" role="alert" hidden></p>' +
+    '<button class="btn-primary-custom" type="submit">Save new bank</button></form>';
+}
+function hideBankSuggestions() {
+  const input = activePanel?.querySelector('#bank-name');
+  const list = activePanel?.querySelector('#bank-suggestions');
+  if (!input || !list) return;
+  list.hidden = true;
+  input.setAttribute('aria-expanded', 'false');
+  input.removeAttribute('aria-activedescendant');
+  selectedSuggestion = -1;
+}
+async function updateBankSuggestions() {
+  const panel = activePanel;
+  const input = panel?.querySelector('#bank-name');
+  const list = panel?.querySelector('#bank-suggestions');
+  if (!input || !list) return;
+  const term = input.value.trim().toLocaleLowerCase();
+  suggestionMatches = [];
+  selectedSuggestion = -1;
+  if (!term) {
+    hideBankSuggestions();
+    return;
+  }
+  try {
+    const banks = await loadBankDirectory();
+    if (activePanel !== panel || input.value.trim().toLocaleLowerCase() !== term) return;
+    // Start-of-name matches first, then other partial matches. Limit on-screen options.
+    suggestionMatches = banks.filter((bank) => bank.toLocaleLowerCase().includes(term))
+      .sort((a, b) => Number(b.toLocaleLowerCase().startsWith(term)) -
+                        Number(a.toLocaleLowerCase().startsWith(term))).slice(0, 8);
+    list.innerHTML = suggestionMatches.map((bank, i) =>
+      '<button type="button" role="option" id="bank-option-' + i +
+      '" aria-selected="false" class="bank-suggestion" data-bank-suggestion="' + i + '">' +
+      escapeHtml(bank) + '</button>').join('');
+    list.hidden = suggestionMatches.length === 0;
+    input.setAttribute('aria-expanded', String(!list.hidden));
+  } catch {
+    // Suggestions are optional; names not present in the directory remain valid.
+    hideBankSuggestions();
+  }
+}
+function selectBankSuggestion(index) {
+  const input = activePanel?.querySelector('#bank-name');
+  if (!input || !suggestionMatches[index]) return;
+  input.value = suggestionMatches[index];
+  hideBankSuggestions();
+  input.focus();
+}
+function onBankNameKeydown(event) {
+  const input = event.target;
+  const list = activePanel?.querySelector('#bank-suggestions');
+  if (!list || list.hidden || !suggestionMatches.length) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    hideBankSuggestions();
+  } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    const offset = event.key === 'ArrowDown' ? 1 : -1;
+    selectedSuggestion = selectedSuggestion < 0
+      ? (offset > 0 ? 0 : suggestionMatches.length - 1)
+      : (selectedSuggestion + offset + suggestionMatches.length) % suggestionMatches.length;
+    list.querySelectorAll('[data-bank-suggestion]').forEach((option, i) => {
+      const active = i === selectedSuggestion;
+      option.classList.toggle('is-active', active);
+      option.setAttribute('aria-selected', String(active));
+    });
+    input.setAttribute('aria-activedescendant', 'bank-option-' + selectedSuggestion);
+    list.querySelector('#bank-option-' + selectedSuggestion)?.scrollIntoView({ block: 'nearest' });
+  } else if (event.key === 'Enter' && selectedSuggestion >= 0) {
+    event.preventDefault();
+    selectBankSuggestion(selectedSuggestion);
+  }
 }
 function onHandInitializePage() {
   const account = getAccount('on-hand');
@@ -310,6 +402,7 @@ function render(previousScroll = 0) {
   else if (path === '/settings') body = settingsPage();
   else if (path === '/settings/initialize') body = initializePage();
   else if (path === '/settings/initialize/banks') body = bankInitializePage();
+  else if (path === '/settings/initialize/banks/add') body = addBankPage();
   else if (path === '/settings/initialize/on-hand') body = onHandInitializePage();
   else body = notFound();
   displayPage(body, path, previousScroll);
@@ -353,7 +446,7 @@ function updateAvailable() {
 }
 async function onSubmit(event) {
   const form = event.target;
-  if (!['movement-form', 'banks-form', 'on-hand-form'].includes(form.id)) return;
+  if (!['movement-form', 'banks-form', 'on-hand-form', 'new-bank-form'].includes(form.id)) return;
   event.preventDefault();
   if (busy) return;
   busy = true;
@@ -363,7 +456,13 @@ async function onSubmit(event) {
   try {
     let destination;
     let successText;
-    if (form.id === 'movement-form') {
+    if (form.id === 'new-bank-form') {
+      const name = form.elements.namedItem('bank-name').value;
+      const initialCents = parsePesos(form.elements.namedItem('initial-amount').value, true);
+      await addBank({ name, initialCents });
+      destination = '#/settings/initialize/banks';
+      successText = 'Bank added.';
+    } else if (form.id === 'movement-form') {
       const kind = form.dataset.kind;
       const sourceId = form.elements.source.value;
       const amountCents = parsePesos(form.elements.amount.value);
@@ -415,6 +514,18 @@ async function start() {
     });
     view.addEventListener('input', (event) => {
       if (event.target.id === 'amount') updateAvailable();
+      if (event.target.id === 'bank-name') updateBankSuggestions();
+    });
+    view.addEventListener('focusin', (event) => {
+      if (event.target.id === 'bank-name') updateBankSuggestions();
+    });
+    view.addEventListener('keydown', (event) => {
+      if (event.target.id === 'bank-name') onBankNameKeydown(event);
+    });
+    view.addEventListener('click', (event) => {
+      const option = event.target.closest('[data-bank-suggestion]');
+      if (option) selectBankSuggestion(Number(option.dataset.bankSuggestion));
+      else if (event.target.id !== 'bank-name') hideBankSuggestions();
     });
     if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
       navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(() => {});

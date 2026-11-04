@@ -14,7 +14,8 @@ Serve the repository with a static HTTP server (for example, `python3 -m http.se
 - Header-free screens with a bottom navigation that hides when scrolling down and reappears when scrolling up.
 - Direction-aware page transitions: new detail screens slide in from the right, while returning to a shallower screen slides the current screen out to the right. Animations respect reduced-motion preferences.
 - Click any dashboard balance or summary to see transaction details.
-- **Settings → Initialize → Banks** to set each bank balance, and **Settings → Initialize → On-hand** for physical cash.
+- **Settings → Initialize → Banks** to set each bank balance or add another bank using the centered **+** button, and **Settings → Initialize → On-hand** for physical cash.
+- Add a new bank with an initial balance and autocomplete suggestions from all 451 institution names in the uploaded BankDirectory.xlsx. You can also enter any custom bank name; the directory does not restrict input.
 - Cash-in/cash-out forms with source, amount, and date (today by default).
 - Atomic IndexedDB account/transaction writes. Cash-out cannot exceed the selected source balance.
 - Ledger sorted by transaction date (newest first), including traceable initialization or correction adjustments.
@@ -30,7 +31,8 @@ Everything is stored on your device in your browser profile. Private or incognit
 
 - `index.html` — application shell.
 - `css/styles.css` — mobile-first interface and Bootstrap fallbacks.
-- `js/db.js` — IndexedDB access and transactional balance rules.
+- `js/db.js` — IndexedDB access, custom bank creation, and transactional balance rules.
+- `js/bank-directory.js` — offline bank directory suggestions sourced from the provided spreadsheet (native, dependency-free decompression).
 - `js/app.js` — navigation, rendering, forms, and UI events.
 - `sw.js` — offline app-shell caching.
 - `manifest.webmanifest` and `icons/icon.svg` — installable app metadata and icon.

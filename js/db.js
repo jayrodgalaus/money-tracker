@@ -13,7 +13,6 @@ export const ACCOUNT_DEFS = Object.freeze([
 
 const NAME = 'money-tracker';
 const VERSION = 2;
-const accountIds = new Set(ACCOUNT_DEFS.map((account) => account.id));
 let connectionPromise;
 
 export function todayLocal() {
@@ -100,7 +99,7 @@ export async function getSnapshot() {
 
 export async function recordMovement({ kind, sourceId, amountCents, date }) {
   if (kind !== 'cash-in' && kind !== 'cash-out') throw new Error('Invalid transaction type.');
-  if (!accountIds.has(sourceId)) throw new Error('Choose a valid source.');
+  if (typeof sourceId !== 'string' || !sourceId || sourceId.length > 128) throw new Error('Choose a valid source.');
   if (!Number.isSafeInteger(amountCents) || amountCents <= 0) throw new Error('Enter an amount greater than zero.');
   if (!validDate(date)) throw new Error('Choose a valid date.');
   const db = await openDatabase();
@@ -144,7 +143,7 @@ export async function saveStartingBalances(entries) {
   if (!Array.isArray(entries) || !entries.length) throw new Error('No balances to save.');
   const seen = new Set();
   for (const entry of entries) {
-    if (!accountIds.has(entry.id) || seen.has(entry.id) || !Number.isSafeInteger(entry.balanceCents) || entry.balanceCents < 0) {
+    if (typeof entry.id !== 'string' || !entry.id || entry.id.length > 128 || seen.has(entry.id) || !Number.isSafeInteger(entry.balanceCents) || entry.balanceCents < 0) {
       throw new Error('Invalid balance or duplicate source.');
     }
     seen.add(entry.id);
@@ -182,5 +181,50 @@ export async function saveStartingBalances(entries) {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(businessError || tx.error || new Error('Could not save starting balances.'));
     tx.onabort = () => reject(businessError || tx.error || new Error('Could not save starting balances.'));
+  });
+}
+
+// Add a custom or directory-listed bank. All accounts share the same IndexedDB
+// store, so newly added banks work in balance initialization and transactions.
+export async function addBank({ name, initialCents }) {
+  const cleanName = typeof name === 'string' ? name.replace(/\s+/g, ' ').trim() : '';
+  if (cleanName.length < 2 || cleanName.length > 120 || /[\x00-\x1f\x7f]/.test(cleanName)) {
+    throw new Error('Enter a bank name between 2 and 120 characters.');
+  }
+  if (!Number.isSafeInteger(initialCents) || initialCents < 0) {
+    throw new Error('Enter a valid initial amount of zero or more.');
+  }
+  const id = 'custom-' + (globalThis.crypto?.randomUUID?.() ||
+    Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 11));
+  const account = {
+    id, name: cleanName, kind: 'bank', symbol: cleanName.slice(0, 2).toLocaleUpperCase(),
+    balanceCents: initialCents, initialized: true
+  };
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['accounts', 'transactions'], 'readwrite');
+    const accounts = tx.objectStore('accounts');
+    const transactions = tx.objectStore('transactions');
+    let businessError;
+    const request = accounts.getAll();
+    request.onsuccess = () => {
+      const duplicate = request.result.some((existing) =>
+        existing.name.replace(/\s+/g, ' ').trim().toLocaleLowerCase() === cleanName.toLocaleLowerCase());
+      if (duplicate) {
+        businessError = new Error('This bank is already in your list.');
+        tx.abort();
+        return;
+      }
+      accounts.add(account);
+      if (initialCents > 0) {
+        transactions.add({
+          kind: 'adjustment', sourceId: id, amountCents: initialCents,
+          date: todayLocal(), createdAt: new Date().toISOString(), note: 'Opening balance'
+        });
+      }
+    };
+    tx.oncomplete = () => resolve(id);
+    tx.onerror = () => reject(businessError || tx.error || new Error('Unable to add this bank.'));
+    tx.onabort = () => reject(businessError || tx.error || new Error('Unable to add this bank.'));
   });
 }

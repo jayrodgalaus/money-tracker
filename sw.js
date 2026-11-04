@@ -1,12 +1,13 @@
 /* Cache a minimal offline shell and use fresh online assets when available.
    Query-string asset versions in index.html ensure upgrades bypass older service workers. */
-const CACHE_NAME = 'money-tracker-shell-v5';
+const CACHE_NAME = 'money-tracker-shell-v6';
 const APP_SHELL = [
   './',
   './index.html',
-  './css/styles.css?v=5',
-  './js/app.js?v=5',
-  './js/db.js?v=5',
+  './css/styles.css?v=6',
+  './js/app.js?v=6',
+  './js/db.js?v=6',
+  './js/bank-directory.js?v=6',
   './manifest.webmanifest',
   './icons/icon.svg'
 ];
