@@ -1,6 +1,8 @@
-import { ACCOUNT_DEFS, getSnapshot, parsePesos, recordMovement, saveStartingBalances, todayLocal, validDate } from './db.js?v=3';
+import { ACCOUNT_DEFS, getSnapshot, parsePesos, recordMovement, saveStartingBalances, todayLocal, validDate } from './db.js?v=4';
 
 const view = document.getElementById('view');
+const stage = document.getElementById('page-stage');
+const bottomNav = document.querySelector('.bottom-nav');
 const message = document.getElementById('message');
 const currency = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2 });
 const longDate = new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -8,6 +10,85 @@ const monthLabel = new Intl.DateTimeFormat('en-PH', { month: 'long', year: 'nume
 let snapshot = { accounts: [], transactions: [] };
 let busy = false;
 let noticeTimeout;
+let activePanel;
+let currentPath;
+let transitionTimeout;
+let lastScrollY = window.scrollY;
+
+// Keep the bottom tabs available when scrolling upward or navigating.
+function showBottomNav() {
+  bottomNav.classList.remove('is-hidden');
+  bottomNav.removeAttribute('inert');
+}
+function onScroll() {
+  const position = Math.max(0, window.scrollY);
+  const difference = position - lastScrollY;
+  if (position <= 48 || difference < -7) {
+    showBottomNav();
+  } else if (difference > 7 && position > 90) {
+    bottomNav.classList.add('is-hidden');
+    bottomNav.setAttribute('inert', '');
+  }
+  if (Math.abs(difference) > 4 || position <= 48) lastScrollY = position;
+}
+
+// Top-level tabs are peers. Ledger, accounts and Initialize are deeper screens.
+function pageDepth(path) {
+  if (path === '/settings/initialize/banks' || path === '/settings/initialize/on-hand' || path.startsWith('/record/')) return 2;
+  if (path === '/ledger' || path.startsWith('/account/') || path === '/settings/initialize') return 1;
+  return 0;
+}
+function motionReduced() {
+  return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function displayPage(html, path, previousScroll = 0) {
+  const next = document.createElement('div');
+  next.className = 'page-panel';
+  next.innerHTML = html;
+  clearTimeout(transitionTimeout);
+
+  // If another navigation occurred mid-animation, finish it before starting a new one.
+  if (activePanel) {
+    activePanel.className = 'page-panel';
+    stage.replaceChildren(activePanel);
+  } else {
+    stage.replaceChildren();
+  }
+  const previous = activePanel;
+  const oldPath = currentPath;
+  currentPath = path;
+  activePanel = next;
+
+  if (!previous || oldPath === path || motionReduced()) {
+    stage.replaceChildren(next);
+    return;
+  }
+
+  const oldDepth = pageDepth(oldPath);
+  const newDepth = pageDepth(path);
+  const direction = newDepth < oldDepth ? 'back' : newDepth > oldDepth ? 'forward' : 'lateral';
+  previous.className = 'page-panel is-leaving is-leaving-' + direction;
+  // Preserve the outgoing screen's visible scroll position while the new one starts at the top.
+  previous.style.top = -previousScroll + 'px';
+  previous.setAttribute('aria-hidden', 'true');
+  previous.setAttribute('inert', '');
+  next.className = 'page-panel is-entering-' + direction;
+  stage.append(next);
+  // The old page is above the incoming page when navigating back, so it slides off to the right.
+  const finish = () => {
+    if (activePanel !== next) return;
+    next.className = 'page-panel';
+    stage.replaceChildren(next);
+  };
+  next.addEventListener('animationend', (event) => {
+    if (event.target === next) {
+      clearTimeout(transitionTimeout);
+      finish();
+    }
+  }, { once: true });
+  transitionTimeout = setTimeout(finish, 400);
+}
 
 function pesos(cents) { return currency.format(cents / 100); }
 function escapeHtml(value) {
@@ -215,7 +296,7 @@ function currentRoute() {
   const query = questionMark < 0 ? '' : hash.slice(questionMark + 1);
   return { path: pathname.replace(/\/+$/, '') || '/dashboard', params: new URLSearchParams(query) };
 }
-function render() {
+function render(previousScroll = 0) {
   const { path, params } = currentRoute();
   let body;
   if (path === '/dashboard') body = dashboard();
@@ -228,7 +309,7 @@ function render() {
   else if (path === '/settings/initialize/banks') body = bankInitializePage();
   else if (path === '/settings/initialize/on-hand') body = onHandInitializePage();
   else body = notFound();
-  view.innerHTML = body;
+  displayPage(body, path, previousScroll);
   const tab = path.startsWith('/settings') ? 'settings' : path.includes('cash-in') ? 'cash-in' : path.includes('cash-out') ? 'cash-out' : 'dashboard';
   document.querySelectorAll('[data-tab]').forEach((link) => {
     const active = link.dataset.tab === tab;
@@ -252,10 +333,10 @@ function formError(form, text) {
   }
 }
 function updateAvailable() {
-  const form = document.getElementById('movement-form');
+  const form = activePanel?.querySelector('#movement-form');
   if (!form) return;
   const account = getAccount(form.elements.source.value);
-  const label = document.getElementById('available-balance');
+  const label = form.querySelector('#available-balance');
   if (label) label.textContent = 'Available: ' + pesos(account?.balanceCents || 0);
   const amount = form.elements.amount.value;
   if (form.dataset.kind === 'cash-out' && amount) {
@@ -310,11 +391,21 @@ async function onSubmit(event) {
   }
 }
 async function start() {
-  view.innerHTML = '<p class="page-subtitle">Loading your money tracker…</p>';
+  stage.innerHTML = '<p class="page-subtitle">Loading your money tracker…</p>';
   try {
     snapshot = await getSnapshot();
     render();
-    window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
+    window.addEventListener('hashchange', () => {
+      const previousScroll = window.scrollY;
+      // Start the incoming page at the top while the outgoing page keeps its visual position.
+      window.scrollTo(0, 0);
+      lastScrollY = 0;
+      showBottomNav();
+      render(previousScroll);
+      view.focus({ preventScroll: true });
+    });
+    window.addEventListener('scroll', onScroll, { passive: true });
+    bottomNav.addEventListener('focusin', showBottomNav);
     view.addEventListener('submit', onSubmit);
     view.addEventListener('change', (event) => {
       if (event.target.id === 'source') updateAvailable();
@@ -326,7 +417,7 @@ async function start() {
       navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(() => {});
     }
   } catch (error) {
-    view.innerHTML = pageHeader('Storage unavailable', 'Unable to open Money Tracker') +
+    stage.innerHTML = pageHeader('Storage unavailable', 'Unable to open Money Tracker') +
       '<div class="empty-state">' + escapeHtml(error.message || 'Could not open your local money data.') +
       '<p class="mt-2">Use a modern browser, enable site storage, and reload this page.</p></div>';
     notify('Local data is unavailable.', true);

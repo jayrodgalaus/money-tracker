@@ -11,6 +11,8 @@ Serve the repository with a static HTTP server (for example, `python3 -m http.se
 ## Features
 
 - Dashboard with total holdings, current-month cash-in and cash-out totals, alphabetically sorted bank balances, and On-hand cash.
+- Header-free screens with a bottom navigation that hides when scrolling down and reappears when scrolling up.
+- Direction-aware page transitions: new detail screens slide in from the right, while returning to a shallower screen slides the current screen out to the right. Animations respect reduced-motion preferences.
 - Click any dashboard balance or summary to see transaction details.
 - **Settings → Initialize → Banks** to set each bank balance, and **Settings → Initialize → On-hand** for physical cash.
 - Cash-in/cash-out forms with source, amount, and date (today by default).
