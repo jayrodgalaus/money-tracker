@@ -5,13 +5,14 @@ export const ACCOUNT_DEFS = Object.freeze([
   { id: 'gcash', name: 'GCash', kind: 'bank', symbol: 'GC' },
   { id: 'gotyme', name: 'GoTyme', kind: 'bank', symbol: 'GT' },
   { id: 'maribank', name: 'MariBank', kind: 'bank', symbol: 'MB' },
+  { id: 'ownbank', name: 'OwnBank', kind: 'bank', symbol: 'OB' },
   { id: 'rcbc', name: 'RCBC', kind: 'bank', symbol: 'RC' },
   { id: 'wise', name: 'Wise', kind: 'bank', symbol: 'WI' },
   { id: 'on-hand', name: 'On-hand', kind: 'cash', symbol: '₱' }
 ]);
 
 const NAME = 'money-tracker';
-const VERSION = 1;
+const VERSION = 2;
 const accountIds = new Set(ACCOUNT_DEFS.map((account) => account.id));
 let connectionPromise;
 
@@ -48,14 +49,21 @@ export function openDatabase() {
   if (connectionPromise) return connectionPromise;
   connectionPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(NAME, VERSION);
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       const database = request.result;
-      const accounts = database.createObjectStore('accounts', { keyPath: 'id' });
-      const transactions = database.createObjectStore('transactions', { keyPath: 'id', autoIncrement: true });
-      transactions.createIndex('date', 'date');
-      transactions.createIndex('sourceId', 'sourceId');
-      transactions.createIndex('kind', 'kind');
-      ACCOUNT_DEFS.forEach((account) => accounts.put({ ...account, balanceCents: 0, initialized: false }));
+      if (event.oldVersion < 1) {
+        const accounts = database.createObjectStore('accounts', { keyPath: 'id' });
+        const transactions = database.createObjectStore('transactions', { keyPath: 'id', autoIncrement: true });
+        transactions.createIndex('date', 'date');
+        transactions.createIndex('sourceId', 'sourceId');
+        transactions.createIndex('kind', 'kind');
+        ACCOUNT_DEFS.forEach((account) => accounts.put({ ...account, balanceCents: 0, initialized: false }));
+      }
+      // Upgrade existing installations without overwriting saved balances or transactions.
+      if (event.oldVersion === 1) {
+        const ownBank = ACCOUNT_DEFS.find((account) => account.id === 'ownbank');
+        request.transaction.objectStore('accounts').add({ ...ownBank, balanceCents: 0, initialized: false });
+      }
     };
     request.onsuccess = () => {
       const database = request.result;

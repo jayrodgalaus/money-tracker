@@ -1,6 +1,6 @@
 # Money Tracker
 
-A lightweight, mobile-first personal money tracker for Philippine peso balances across BDO, BPI, GCash, GoTyme, MariBank, RCBC, Wise, and On-hand cash.
+A lightweight, mobile-first personal money tracker for Philippine peso balances across BDO, BPI, GCash, GoTyme, MariBank, OwnBank, RCBC, Wise, and On-hand cash.
 
 Built with semantic HTML, vanilla CSS, native JavaScript modules, IndexedDB and Bootstrap 5.3.8 CSS from the official CDN. No frameworks, bundlers, runtime packages, or external data services.
 

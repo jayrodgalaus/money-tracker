@@ -1,5 +1,5 @@
 /* Offline-first application shell. Bootstrap CDN is optional and not precached. */
-const CACHE_NAME = 'money-tracker-shell-v1';
+const CACHE_NAME = 'money-tracker-shell-v2';
 const APP_SHELL = ['./', './index.html', './css/styles.css', './js/app.js', './js/db.js', './manifest.webmanifest', './icons/icon.svg'];
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));

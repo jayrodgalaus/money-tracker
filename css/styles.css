@@ -59,6 +59,7 @@ button, a { touch-action: manipulation; }
 .account-avatar.bpi { background: #fff0ec; color: #a73534; }
 .account-avatar.gcash, .account-avatar.gotyme { background: #eaf0ff; color: #295bc0; }
 .account-avatar.maribank { background: #e8fbef; color: #187e46; }
+.account-avatar.ownbank { background: #fff1e6; color: #ae581b; }
 .account-avatar.wise { background: #e9f6dc; color: #4d8017; }
 .account-description { min-width: 0; flex: 1; }
 .account-name { display: block; font-size: .91rem; font-weight: 750; }

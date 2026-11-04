@@ -172,7 +172,7 @@ function initializePage() {
     pageHeader('Initialize', 'Set starting balances', 'Choose which balances to initialize or update.') +
     '<div class="settings-list">' +
     '<a class="settings-link" href="#/settings/initialize/banks"><span class="account-avatar" aria-hidden="true">▦</span>' +
-    '<span class="account-description"><strong>Banks<small>BDO, BPI, GCash, GoTyme, MariBank, RCBC, Wise</small></strong></span><span class="chevron" aria-hidden="true">›</span></a>' +
+    '<span class="account-description"><strong>Banks<small>BDO, BPI, GCash, GoTyme, MariBank, OwnBank, RCBC, Wise</small></strong></span><span class="chevron" aria-hidden="true">›</span></a>' +
     '<a class="settings-link" href="#/settings/initialize/on-hand"><span class="account-avatar cash" aria-hidden="true">₱</span>' +
     '<span class="account-description"><strong>On-hand<small>Initialize physical cash</small></strong></span><span class="chevron" aria-hidden="true">›</span></a></div>' +
     '<div class="info-panel">Saving a different balance creates a dated ledger adjustment. Adjustments do not change monthly cash-in or cash-out totals.</div>';
