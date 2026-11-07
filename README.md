@@ -17,7 +17,8 @@ Serve the repository with a static HTTP server (for example, `python3 -m http.se
 - **Settings → Initialize → Banks** to set each bank balance or add another bank using the centered **+** button, and **Settings → Initialize → On-hand** for physical cash.
 - Add a new bank with an initial balance and autocomplete suggestions from all 451 institution names in the uploaded BankDirectory.xlsx. You can also enter any custom bank name; the directory does not restrict input.
 - Cash-in/cash-out forms with source, amount, and date (today by default).
-- Atomic IndexedDB account/transaction writes. Cash-out cannot exceed the selected source balance.
+- **Transfer** in the bottom navigation: record an atomic bank-to-bank transfer with source bank, destination bank, amount, and date. Transfers appear in a dedicated history, the combined ledger, and both bank histories, without affecting total holdings or monthly cash-in/cash-out totals.
+- Atomic IndexedDB account/transaction writes. Cash-out and transfers cannot exceed the selected source balance. Transfers debit one bank and credit another within the same transaction.
 - Ledger sorted by transaction date (newest first), including traceable initialization or correction adjustments.
 - Local-first data persistence and a service worker that caches core application files after the first successful visit. Bootstrap styling comes from its CDN when online; custom CSS provides usable offline styling.
 

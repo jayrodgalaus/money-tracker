@@ -1,5 +1,5 @@
-import { ACCOUNT_DEFS, getSnapshot, parsePesos, recordMovement, saveStartingBalances, addBank, todayLocal, validDate } from './db.js?v=6';
-import { loadBankDirectory } from './bank-directory.js?v=6';
+import { ACCOUNT_DEFS, getSnapshot, parsePesos, recordMovement, recordTransfer, saveStartingBalances, addBank, todayLocal, validDate } from './db.js?v=7';
+import { loadBankDirectory } from './bank-directory.js?v=7';
 
 const view = document.getElementById('view');
 const stage = document.getElementById('page-stage');
@@ -154,7 +154,21 @@ function accountRow(account) {
     '<span class="account-type">' + (account.kind === 'bank' ? 'Bank / e-wallet' : 'Physical cash') + '</span></span>' +
     '<span class="account-value">' + pesos(account.balanceCents) + '</span><span class="chevron" aria-hidden="true">›</span></a>';
 }
-function transactionRow(entry) {
+function transactionRow(entry, accountId = null) {
+  if (entry.kind === 'transfer') {
+    const from = getAccount(entry.fromId)?.name || 'Unknown bank';
+    const to = getAccount(entry.toId)?.name || 'Unknown bank';
+    const incoming = accountId === entry.toId;
+    const outgoing = accountId === entry.fromId;
+    const amountClass = incoming ? 'positive' : outgoing ? 'negative' : 'neutral';
+    const prefix = incoming ? '+' : outgoing ? '−' : '';
+    const label = incoming ? 'Transfer received' : outgoing ? 'Transfer sent' : 'Transfer';
+    return '<div class="transaction-row">' +
+      '<span class="transaction-icon transfer" aria-hidden="true">⇄</span>' +
+      '<div class="transaction-main"><strong>' + escapeHtml(from) + ' → ' + escapeHtml(to) + '</strong>' +
+      '<small>' + label + ' · ' + displayDate(entry.date) + '</small></div>' +
+      '<span class="transaction-amount ' + amountClass + '">' + prefix + pesos(entry.amountCents) + '</span></div>';
+  }
   const adjustment = entry.kind === 'adjustment';
   const out = entry.amountCents < 0;
   const name = getAccount(entry.sourceId)?.name || 'Unknown source';
@@ -169,11 +183,11 @@ function transactionRow(entry) {
     '<span class="transaction-amount ' + amountClass + '">' +
     (entry.amountCents < 0 ? '−' : '+') + pesos(Math.abs(entry.amountCents)) + '</span></div>';
 }
-function transactionList(transactions, context) {
+function transactionList(transactions, context, accountId = null) {
   if (!transactions.length) {
     return emptyState('No activity yet', 'Your ' + context + ' will appear here as you record them.');
   }
-  return '<div class="transaction-list">' + sortedTransactions(transactions).map(transactionRow).join('') + '</div>';
+  return '<div class="transaction-list">' + sortedTransactions(transactions).map((entry) => transactionRow(entry, accountId)).join('') + '</div>';
 }
 function dashboard() {
   const date = new Date();
@@ -199,7 +213,7 @@ function dashboard() {
 }
 function ledgerPage() {
   return backLink('/dashboard', 'Dashboard') +
-    pageHeader('Activity', 'Transaction ledger', 'Every transaction and balance adjustment, newest date first.') +
+    pageHeader('Activity', 'Transaction ledger', 'Every cash movement, transfer, and balance adjustment, newest date first.') +
     '<div class="detail-card"><div class="label">Total Amount</div><div class="amount">' + pesos(totalBalance()) + '</div></div>' +
     sectionHeading('All transactions', snapshot.transactions.length + ' entries') +
     transactionList(snapshot.transactions, 'ledger entries');
@@ -216,10 +230,53 @@ function movementPage(kind) {
     sectionHeading('Recorded ' + title.toLowerCase() + 's', transactions.length + ' entries') +
     transactionList(transactions, title.toLowerCase() + ' records');
 }
+
+function transferPage() {
+  const transfers = snapshot.transactions.filter((entry) => entry.kind === 'transfer');
+  return backLink('/dashboard', 'Dashboard') +
+    pageHeader('Money movement', 'Transfers', 'Move money between banks without changing your total amount.') +
+    '<a class="btn-primary-custom w-100" href="#/record/transfer">⇄ Record transfer</a>' +
+    sectionHeading('Recorded transfers', transfers.length + ' entries') +
+    transactionList(transfers, 'transfers');
+}
+function transferForm(params) {
+  const banks = bankAccounts();
+  if (banks.length < 2) {
+    return backLink('/transfer', 'Transfers') +
+      pageHeader('New transaction', 'Record transfer') +
+      emptyState('Two banks required', 'Add at least two bank accounts to record a transfer.',
+        '/settings/initialize/banks/add', 'Add a bank');
+  }
+  const requested = params.get('from');
+  const fromId = banks.some((account) => account.id === requested) ? requested : banks[0].id;
+  const toId = banks.find((account) => account.id !== fromId).id;
+  const options = (chosen) => banks.map((account) =>
+    '<option value="' + escapeHtml(account.id) + '"' + (account.id === chosen ? ' selected' : '') +
+    '>' + escapeHtml(account.name) + '</option>').join('');
+  return backLink('/transfer', 'Transfers') +
+    pageHeader('New transaction', 'Record transfer', 'Move funds from one bank account to another.') +
+    '<form id="transfer-form" class="form-panel" novalidate>' +
+    '<div class="field"><label for="from-bank">From bank</label>' +
+    '<select class="form-select" id="from-bank" name="from-bank" required>' + options(fromId) + '</select>' +
+    '<p class="field-help" id="transfer-available">Available: ' +
+    pesos(getAccount(fromId)?.balanceCents || 0) + '</p></div>' +
+    '<div class="field"><label for="to-bank">To bank</label>' +
+    '<select class="form-select" id="to-bank" name="to-bank" required>' + options(toId) + '</select></div>' +
+    '<div class="field"><label for="transfer-amount">Amount (₱)</label>' +
+    '<input class="form-control" type="number" id="transfer-amount" name="transfer-amount" ' +
+    'min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" required></div>' +
+    '<div class="field"><label for="transfer-date">Date</label>' +
+    '<input class="form-control" type="date" id="transfer-date" name="transfer-date" ' +
+    'value="' + todayLocal() + '" required></div>' +
+    '<p id="form-error" class="field-error" role="alert" hidden></p>' +
+    '<button type="submit" class="btn-primary-custom">Save transfer</button></form>' +
+    '<div class="info-panel">Transfers do not count as Cash In or Cash Out and do not change the Total Amount.</div>';
+}
 function accountPage(id) {
   const account = getAccount(id);
   if (!account) return notFound();
-  const transactions = snapshot.transactions.filter((entry) => entry.sourceId === id);
+  const transactions = snapshot.transactions.filter((entry) =>
+    entry.sourceId === id || (entry.kind === 'transfer' && (entry.fromId === id || entry.toId === id)));
   const suffix = '?source=' + encodeURIComponent(id);
   return backLink('/dashboard', 'Dashboard') +
     pageHeader(account.kind === 'bank' ? 'Bank / e-wallet' : 'Physical cash', account.name, 'Your current available balance and history.') +
@@ -227,7 +284,7 @@ function accountPage(id) {
     '<div class="action-row"><a class="btn-primary-custom" href="#/record/cash-in' + suffix + '">+ Cash in</a>' +
     '<a class="btn-secondary-custom" href="#/record/cash-out' + suffix + '">− Cash out</a></div>' +
     sectionHeading('Account activity', transactions.length + ' entries') +
-    transactionList(transactions, account.name + ' transactions');
+    transactionList(transactions, account.name + ' transactions', id);
 }
 function movementForm(kind, params) {
   const isOut = kind === 'cash-out';
@@ -397,6 +454,8 @@ function render(previousScroll = 0) {
   if (path === '/dashboard') body = dashboard();
   else if (path === '/ledger') body = ledgerPage();
   else if (path === '/cash-in' || path === '/cash-out') body = movementPage(path.slice(1));
+  else if (path === '/transfer') body = transferPage();
+  else if (path === '/record/transfer') body = transferForm(params);
   else if (path === '/record/cash-in' || path === '/record/cash-out') body = movementForm(path.split('/')[2], params);
   else if (path.startsWith('/account/')) body = accountPage(decodeURIComponent(path.slice(9)));
   else if (path === '/settings') body = settingsPage();
@@ -406,7 +465,9 @@ function render(previousScroll = 0) {
   else if (path === '/settings/initialize/on-hand') body = onHandInitializePage();
   else body = notFound();
   displayPage(body, path, previousScroll);
-  const tab = path.startsWith('/settings') ? 'settings' : path.includes('cash-in') ? 'cash-in' : path.includes('cash-out') ? 'cash-out' : 'dashboard';
+  const tab = path.startsWith('/settings') ? 'settings' :
+    path === '/transfer' || path === '/record/transfer' ? 'transfer' :
+    path.includes('cash-in') ? 'cash-in' : path.includes('cash-out') ? 'cash-out' : 'dashboard';
   document.querySelectorAll('[data-tab]').forEach((link) => {
     const active = link.dataset.tab === tab;
     link.classList.toggle('active', active);
@@ -444,9 +505,35 @@ function updateAvailable() {
     }
   } else formError(form, '');
 }
+
+function updateTransferPreview() {
+  const form = activePanel?.querySelector('#transfer-form');
+  if (!form) return;
+  const fromId = form.elements.namedItem('from-bank').value;
+  const toId = form.elements.namedItem('to-bank').value;
+  const fromAccount = snapshot.accounts.find((account) => account.id === fromId && account.kind === 'bank');
+  const available = form.querySelector('#transfer-available');
+  if (available) available.textContent = 'Available: ' + pesos(fromAccount?.balanceCents || 0);
+  if (fromId === toId) {
+    formError(form, 'Choose two different banks.');
+    return;
+  }
+  const raw = form.elements.namedItem('transfer-amount').value;
+  if (!raw) {
+    formError(form, '');
+    return;
+  }
+  try {
+    const amountCents = parsePesos(raw);
+    formError(form, fromAccount && amountCents > fromAccount.balanceCents ?
+      'Insufficient balance in ' + fromAccount.name + '.' : '');
+  } catch (error) {
+    formError(form, error.message);
+  }
+}
 async function onSubmit(event) {
   const form = event.target;
-  if (!['movement-form', 'banks-form', 'on-hand-form', 'new-bank-form'].includes(form.id)) return;
+  if (!['movement-form', 'banks-form', 'on-hand-form', 'new-bank-form', 'transfer-form'].includes(form.id)) return;
   event.preventDefault();
   if (busy) return;
   busy = true;
@@ -456,7 +543,15 @@ async function onSubmit(event) {
   try {
     let destination;
     let successText;
-    if (form.id === 'new-bank-form') {
+    if (form.id === 'transfer-form') {
+      const fromId = form.elements.namedItem('from-bank').value;
+      const toId = form.elements.namedItem('to-bank').value;
+      const amountCents = parsePesos(form.elements.namedItem('transfer-amount').value);
+      const date = form.elements.namedItem('transfer-date').value;
+      await recordTransfer({ fromId, toId, amountCents, date });
+      destination = '#/transfer';
+      successText = 'Transfer saved.';
+    } else if (form.id === 'new-bank-form') {
       const name = form.elements.namedItem('bank-name').value;
       const initialCents = parsePesos(form.elements.namedItem('initial-amount').value, true);
       await addBank({ name, initialCents });
@@ -511,9 +606,11 @@ async function start() {
     view.addEventListener('submit', onSubmit);
     view.addEventListener('change', (event) => {
       if (event.target.id === 'source') updateAvailable();
+      if (event.target.id === 'from-bank' || event.target.id === 'to-bank') updateTransferPreview();
     });
     view.addEventListener('input', (event) => {
       if (event.target.id === 'amount') updateAvailable();
+      if (event.target.id === 'transfer-amount') updateTransferPreview();
       if (event.target.id === 'bank-name') updateBankSuggestions();
     });
     view.addEventListener('focusin', (event) => {

@@ -228,3 +228,70 @@ export async function addBank({ name, initialCents }) {
     tx.onabort = () => reject(businessError || tx.error || new Error('Unable to add this bank.'));
   });
 }
+
+
+// Transfer moves funds between two distinct banks in a single IndexedDB
+// transaction. A transfer is internal: it does not affect total holdings or
+// monthly cash-in/cash-out statistics.
+export async function recordTransfer({ fromId, toId, amountCents, date }) {
+  if (typeof fromId !== 'string' || !fromId || fromId.length > 128 ||
+      typeof toId !== 'string' || !toId || toId.length > 128) {
+    throw new Error('Choose valid source and destination banks.');
+  }
+  if (fromId === toId) throw new Error('Choose two different banks.');
+  if (!Number.isSafeInteger(amountCents) || amountCents <= 0) {
+    throw new Error('Enter an amount greater than zero.');
+  }
+  if (!validDate(date)) throw new Error('Choose a valid date.');
+
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['accounts', 'transactions'], 'readwrite');
+    const accounts = tx.objectStore('accounts');
+    const transactions = tx.objectStore('transactions');
+    let businessError;
+    const fail = (message) => {
+      businessError = new Error(message);
+      tx.abort();
+    };
+
+    const fromRequest = accounts.get(fromId);
+    fromRequest.onsuccess = () => {
+      const fromAccount = fromRequest.result;
+      if (!fromAccount || fromAccount.kind !== 'bank') {
+        fail('Choose a valid bank to transfer from.');
+        return;
+      }
+
+      const toRequest = accounts.get(toId);
+      toRequest.onsuccess = () => {
+        const toAccount = toRequest.result;
+        if (!toAccount || toAccount.kind !== 'bank') {
+          fail('Choose a valid destination bank.');
+          return;
+        }
+        if (fromAccount.balanceCents < amountCents) {
+          fail('Insufficient balance in ' + fromAccount.name + '.');
+          return;
+        }
+        const newFromBalance = fromAccount.balanceCents - amountCents;
+        const newToBalance = toAccount.balanceCents + amountCents;
+        if (!Number.isSafeInteger(newFromBalance) || !Number.isSafeInteger(newToBalance)) {
+          fail('The resulting balance is too large.');
+          return;
+        }
+
+        accounts.put({ ...fromAccount, balanceCents: newFromBalance });
+        accounts.put({ ...toAccount, balanceCents: newToBalance });
+        transactions.add({
+          kind: 'transfer', fromId, toId, amountCents, date,
+          createdAt: new Date().toISOString()
+        });
+      };
+    };
+
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(businessError || tx.error || new Error('Unable to save transfer.'));
+    tx.onabort = () => reject(businessError || tx.error || new Error('Unable to save transfer.'));
+  });
+}
