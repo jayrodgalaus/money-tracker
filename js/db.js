@@ -296,3 +296,129 @@ export async function recordTransfer({ fromId, toId, amountCents, date }) {
     tx.onabort = () => reject(businessError || tx.error || new Error('Unable to save transfer.'));
   });
 }
+
+
+// Editing and deleting must undo the original transaction, then apply the
+// replacement in ONE readwrite transaction. This prevents partial updates,
+// overdrafts, and changes to unrelated account balances.
+function transactionEffects(entry) {
+  if (entry.kind === 'transfer') {
+    return [[entry.fromId, -entry.amountCents], [entry.toId, entry.amountCents]];
+  }
+  if (['cash-in', 'cash-out', 'adjustment'].includes(entry.kind)) {
+    return [[entry.sourceId, entry.amountCents]];
+  }
+  throw new Error('This transaction type cannot be changed.');
+}
+
+function editedTransaction(original, changes, accounts) {
+  if (!changes || typeof changes !== 'object' || !validDate(changes.date)) {
+    throw new Error('Choose a valid date.');
+  }
+  const validAccount = (id) => typeof id === 'string' && accounts.has(id);
+  if (original.kind === 'transfer') {
+    const { fromId, toId, amountCents } = changes;
+    if (!validAccount(fromId) || accounts.get(fromId).kind !== 'bank') {
+      throw new Error('Choose a valid source bank.');
+    }
+    const destination = accounts.get(toId);
+    if (!validAccount(toId) || !(destination.kind === 'bank' ||
+      (toId === 'on-hand' && destination.kind === 'cash'))) {
+      throw new Error('Choose a valid recipient.');
+    }
+    if (fromId === toId) throw new Error('Choose different source and destination accounts.');
+    if (!Number.isSafeInteger(amountCents) || amountCents <= 0) {
+      throw new Error('Enter an amount greater than zero.');
+    }
+    return { ...original, fromId, toId, amountCents, date: changes.date,
+      updatedAt: new Date().toISOString() };
+  }
+
+  const { sourceId, amountCents } = changes;
+  if (!validAccount(sourceId)) throw new Error('Choose a valid source account.');
+  if (!Number.isSafeInteger(amountCents) || amountCents === 0 ||
+      (original.kind === 'cash-in' && amountCents < 0) ||
+      (original.kind === 'cash-out' && amountCents > 0)) {
+    throw new Error('Enter a valid, nonzero transaction amount.');
+  }
+  return { ...original, sourceId, amountCents, date: changes.date,
+    updatedAt: new Date().toISOString() };
+}
+
+async function mutateTransaction(id, changes, deleting) {
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error('Invalid transaction.');
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['accounts', 'transactions'], 'readwrite');
+    const accountStore = tx.objectStore('accounts');
+    const transactionStore = tx.objectStore('transactions');
+    let businessError;
+    const fail = (message) => {
+      businessError = new Error(message);
+      tx.abort();
+    };
+    const request = transactionStore.get(id);
+    request.onsuccess = () => {
+      const original = request.result;
+      if (!original) {
+        fail('Transaction was not found. Refresh and try again.');
+        return;
+      }
+      const accountRequest = accountStore.getAll();
+      accountRequest.onsuccess = () => {
+        const accounts = new Map(accountRequest.result.map((account) => [account.id, account]));
+        let replacement;
+        let originalEffects;
+        let updatedEffects;
+        try {
+          replacement = deleting ? null : editedTransaction(original, changes, accounts);
+          originalEffects = transactionEffects(original);
+          updatedEffects = replacement ? transactionEffects(replacement) : [];
+        } catch (error) {
+          fail(error.message);
+          return;
+        }
+        const differences = new Map();
+        for (const [accountId, delta] of originalEffects) {
+          differences.set(accountId, (differences.get(accountId) || 0) - delta);
+        }
+        for (const [accountId, delta] of updatedEffects) {
+          differences.set(accountId, (differences.get(accountId) || 0) + delta);
+        }
+        const updates = [];
+        for (const [accountId, delta] of differences) {
+          const account = accounts.get(accountId);
+          if (!account) {
+            fail('A bank or account for this transaction no longer exists.');
+            return;
+          }
+          const nextBalance = account.balanceCents + delta;
+          if (!Number.isSafeInteger(nextBalance)) {
+            fail('The resulting balance is too large.');
+            return;
+          }
+          if (nextBalance < 0) {
+            fail('Cannot ' + (deleting ? 'delete' : 'edit') + ' this transaction: ' +
+              account.name + ' would have a negative balance.');
+            return;
+          }
+          if (delta !== 0) updates.push({ ...account, balanceCents: nextBalance });
+        }
+        updates.forEach((account) => accountStore.put(account));
+        if (deleting) transactionStore.delete(id);
+        else transactionStore.put(replacement);
+      };
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(businessError || tx.error || new Error('Unable to change transaction.'));
+    tx.onabort = () => reject(businessError || tx.error || new Error('Unable to change transaction.'));
+  });
+}
+
+export function updateTransaction(id, changes) {
+  return mutateTransaction(id, changes, false);
+}
+
+export function deleteTransaction(id) {
+  return mutateTransaction(id, null, true);
+}

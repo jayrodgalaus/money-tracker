@@ -1,4 +1,4 @@
-import { ACCOUNT_DEFS, getSnapshot, parsePesos, recordMovement, recordTransfer, saveStartingBalances, addBank, todayLocal, validDate } from './db.js?v=8';
+import { ACCOUNT_DEFS, getSnapshot, parsePesos, recordMovement, recordTransfer, updateTransaction, deleteTransaction, saveStartingBalances, addBank, todayLocal, validDate } from './db.js?v=9';
 import { loadBankDirectory } from './bank-directory.js?v=7';
 
 const view = document.getElementById('view');
@@ -38,6 +38,7 @@ function onScroll() {
 // Top-level tabs are peers. Ledger, accounts and Initialize are deeper screens.
 function pageDepth(path) {
   if (path === '/settings/initialize/banks/add') return 3;
+  if (path.startsWith('/transaction/') && path.endsWith('/edit')) return 2;
   if (path === '/settings/initialize/banks' || path === '/settings/initialize/on-hand' || path.startsWith('/record/')) return 2;
   if (path === '/ledger' || path.startsWith('/account/') || path === '/settings/initialize') return 1;
   return 0;
@@ -154,7 +155,7 @@ function accountRow(account) {
     '<span class="account-type">' + (account.kind === 'bank' ? 'Bank / e-wallet' : 'Physical cash') + '</span></span>' +
     '<span class="account-value">' + pesos(account.balanceCents) + '</span><span class="chevron" aria-hidden="true">›</span></a>';
 }
-function transactionRow(entry, accountId = null) {
+function transactionContent(entry, accountId = null) {
   if (entry.kind === 'transfer') {
     const from = getAccount(entry.fromId)?.name || 'Unknown bank';
     const to = getAccount(entry.toId)?.name || 'Unknown bank';
@@ -163,11 +164,11 @@ function transactionRow(entry, accountId = null) {
     const amountClass = incoming ? 'positive' : outgoing ? 'negative' : 'neutral';
     const prefix = incoming ? '+' : outgoing ? '−' : '';
     const label = incoming ? 'Transfer received' : outgoing ? 'Transfer sent' : 'Transfer';
-    return '<div class="transaction-row">' +
+    return '' +
       '<span class="transaction-icon transfer" aria-hidden="true">⇄</span>' +
-      '<div class="transaction-main"><strong>' + escapeHtml(from) + ' → ' + escapeHtml(to) + '</strong>' +
-      '<small>' + label + ' · ' + displayDate(entry.date) + '</small></div>' +
-      '<span class="transaction-amount ' + amountClass + '">' + prefix + pesos(entry.amountCents) + '</span></div>';
+      '<span class="transaction-main"><strong>' + escapeHtml(from) + ' → ' + escapeHtml(to) + '</strong>' +
+      '<small>' + label + ' · ' + displayDate(entry.date) + '</small></span>' +
+      '<span class="transaction-amount ' + amountClass + '">' + prefix + pesos(entry.amountCents) + '</span>';
   }
   const adjustment = entry.kind === 'adjustment';
   const out = entry.amountCents < 0;
@@ -176,12 +177,35 @@ function transactionRow(entry, accountId = null) {
   const amountClass = adjustment ? 'neutral' : (out ? 'negative' : 'positive');
   const iconClass = adjustment ? 'adjustment' : (out ? 'out' : '');
   const icon = adjustment ? '≈' : (out ? '−' : '+');
-  return '<div class="transaction-row">' +
+  return '' +
     '<span class="transaction-icon ' + iconClass + '" aria-hidden="true">' + icon + '</span>' +
-    '<div class="transaction-main"><strong>' + escapeHtml(name) + '</strong>' +
-    '<small>' + escapeHtml(label) + ' · ' + displayDate(entry.date) + '</small></div>' +
+    '<span class="transaction-main"><strong>' + escapeHtml(name) + '</strong>' +
+    '<small>' + escapeHtml(label) + ' · ' + displayDate(entry.date) + '</small></span>' +
     '<span class="transaction-amount ' + amountClass + '">' +
-    (entry.amountCents < 0 ? '−' : '+') + pesos(Math.abs(entry.amountCents)) + '</span></div>';
+    (entry.amountCents < 0 ? '−' : '+') + pesos(Math.abs(entry.amountCents)) + '</span>';
+}
+
+function transactionRow(entry, accountId = null) {
+  const id = Number(entry.id);
+  const actionId = 'transaction-actions-' + id;
+  const origin = currentRoute().path;
+  const editHref = '#/transaction/' + id + '/edit?return=' + encodeURIComponent(origin);
+  const editIcon = '<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/>' +
+    '<path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L9 17l-4 1 1-4Z"/></svg>';
+  const deleteIcon = '<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/>' +
+    '<path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 10v6M14 10v6"/></svg>';
+  return '<div class="transaction-item" data-transaction-card="' + id + '">' +
+    '<button type="button" class="transaction-row transaction-trigger" data-transaction-trigger="' + id +
+    '" aria-expanded="false" aria-controls="' + actionId + '" aria-label="Transaction on ' +
+    displayDate(entry.date) + '. Show edit and delete actions">' + transactionContent(entry, accountId) +
+    '</button>' +
+    '<div class="transaction-actions" id="' + actionId + '" role="group" aria-label="Transaction actions" hidden>' +
+    '<a class="transaction-action edit" href="' + escapeHtml(editHref) +
+    '" aria-label="Edit transaction" title="Edit transaction">' + editIcon + '</a>' +
+    '<button type="button" class="transaction-action delete" data-delete-transaction="' + id +
+    '" aria-label="Delete transaction" title="Delete transaction">' + deleteIcon + '</button></div></div>';
 }
 function transactionList(transactions, context, accountId = null) {
   if (!transactions.length) {
@@ -443,6 +467,105 @@ function notFound() {
   return pageHeader('Not found', 'Page unavailable', 'This screen does not exist.') +
     '<a class="btn-primary-custom" href="#/dashboard">Return to dashboard</a>';
 }
+
+function transactionReturnPath(value, entry) {
+  if (['/ledger', '/cash-in', '/cash-out', '/transfer'].includes(value)) return value;
+  if (typeof value === 'string' && value.startsWith('/account/') &&
+      snapshot.accounts.some((account) => '/account/' + account.id === value)) return value;
+  return entry.kind === 'transfer' ? '/transfer' :
+    entry.kind === 'cash-in' || entry.kind === 'cash-out' ? '/' + entry.kind : '/ledger';
+}
+
+function transactionEditPage(id, params) {
+  const entry = snapshot.transactions.find((transaction) => transaction.id === id);
+  if (!entry) return backLink('/ledger', 'Ledger') +
+    emptyState('Transaction not found', 'This transaction may have been deleted.');
+
+  const returnPath = transactionReturnPath(params.get('return'), entry);
+  const optionList = (accounts, selectedId) => accounts.map((account) =>
+    '<option value="' + escapeHtml(account.id) + '"' + (account.id === selectedId ? ' selected' : '') + '>' +
+    escapeHtml(account.name) + '</option>').join('');
+  const fromBanks = bankAccounts();
+  const all = allAccounts();
+  const isTransfer = entry.kind === 'transfer';
+  const adjustment = entry.kind === 'adjustment';
+  const kindLabel = isTransfer ? 'Transfer' : adjustment ? 'Balance adjustment' :
+    entry.kind === 'cash-in' ? 'Cash in' : 'Cash out';
+  const amount = isTransfer || !adjustment ? (Math.abs(entry.amountCents) / 100).toFixed(2) :
+    (entry.amountCents / 100).toFixed(2);
+  const fields = isTransfer ?
+    '<div class="field"><label for="edit-from">From bank</label><select class="form-select" id="edit-from" name="from" required>' +
+    optionList(fromBanks, entry.fromId) + '</select></div>' +
+    '<div class="field"><label for="edit-to">To account</label><select class="form-select" id="edit-to" name="to" required>' +
+    optionList([...fromBanks, ...all.filter((account) => account.id === 'on-hand')], entry.toId) + '</select></div>' :
+    '<div class="field"><label for="edit-source">Source</label><select class="form-select" id="edit-source" name="source" required>' +
+    optionList(all, entry.sourceId) + '</select></div>';
+  return backLink(returnPath, 'Transactions') +
+    pageHeader('Edit transaction', kindLabel, 'Update the amount, date, or account details.') +
+    '<form id="edit-transaction-form" class="form-panel" data-transaction-id="' + id +
+    '" data-return="' + escapeHtml(returnPath) + '" novalidate>' +
+    fields +
+    '<div class="field"><label for="edit-amount">' + (adjustment ? 'Balance change (₱)' : 'Amount (₱)') + '</label>' +
+    '<input class="form-control" type="number" id="edit-amount" name="amount" step="0.01" ' +
+    (adjustment ? '' : 'min="0.01" ') + 'inputmode="decimal" value="' + amount + '" required>' +
+    (adjustment ? '<p class="field-help">Use a positive amount to increase the balance or a negative amount to decrease it.</p>' : '') +
+    '</div><div class="field"><label for="edit-date">Date</label>' +
+    '<input class="form-control" type="date" id="edit-date" name="date" value="' + escapeHtml(entry.date) +
+    '" required></div>' +
+    '<p class="field-error" id="form-error" role="alert" hidden></p>' +
+    '<button class="btn-primary-custom" type="submit">Save changes</button></form>' +
+    '<div class="info-panel">Saving recalculates affected balances. Changes that would create a negative balance are blocked.</div>';
+}
+
+function closeTransactionActions() {
+  const open = activePanel?.querySelector('.transaction-actions:not([hidden])');
+  if (!open) return;
+  open.hidden = true;
+  const trigger = open.closest('.transaction-item')?.querySelector('[data-transaction-trigger]');
+  trigger?.setAttribute('aria-expanded', 'false');
+}
+function toggleTransactionActions(trigger) {
+  const menu = trigger.closest('.transaction-item')?.querySelector('.transaction-actions');
+  if (!menu) return;
+  const opening = menu.hidden;
+  closeTransactionActions();
+  if (opening) {
+    menu.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+  }
+}
+
+async function requestDeleteTransaction(button) {
+  if (busy) return;
+  const id = Number(button.dataset.deleteTransaction);
+  if (!snapshot.transactions.some((entry) => entry.id === id)) {
+    notify('This transaction was not found.', true);
+    return;
+  }
+  if (!window.confirm('Delete this transaction? Its effect on account balances will be reversed. This cannot be undone.')) return;
+  busy = true;
+  button.disabled = true;
+  try {
+    await deleteTransaction(id);
+    snapshot = await getSnapshot();
+    render();
+    notify('Transaction deleted.');
+  } catch (error) {
+    button.disabled = false;
+    notify(error.message || 'Unable to delete the transaction.', true);
+  } finally {
+    busy = false;
+  }
+}
+
+function parseAdjustmentAmount(value) {
+  const input = String(value).trim();
+  const negative = input.startsWith('-');
+  const signed = negative || input.startsWith('+') ? input.slice(1) : input;
+  const cents = parsePesos(signed);
+  return negative ? -cents : cents;
+}
+
 function currentRoute() {
   const hash = (location.hash || '#/dashboard').slice(1);
   const questionMark = hash.indexOf('?');
@@ -455,6 +578,9 @@ function render(previousScroll = 0) {
   let body;
   if (path === '/dashboard') body = dashboard();
   else if (path === '/ledger') body = ledgerPage();
+  else if (path.startsWith('/transaction/') && path.endsWith('/edit')) {
+    body = transactionEditPage(Number(path.split('/')[2]), params);
+  }
   else if (path === '/cash-in' || path === '/cash-out') body = movementPage(path.slice(1));
   else if (path === '/transfer') body = transferPage();
   else if (path === '/record/transfer') body = transferForm(params);
@@ -467,9 +593,12 @@ function render(previousScroll = 0) {
   else if (path === '/settings/initialize/on-hand') body = onHandInitializePage();
   else body = notFound();
   displayPage(body, path, previousScroll);
-  const tab = path.startsWith('/settings') ? 'settings' :
-    path === '/transfer' || path === '/record/transfer' ? 'transfer' :
-    path.includes('cash-in') ? 'cash-in' : path.includes('cash-out') ? 'cash-out' : 'dashboard';
+  const editEntry = path.startsWith('/transaction/') && path.endsWith('/edit') ?
+    snapshot.transactions.find((item) => item.id === Number(path.split('/')[2])) : null;
+  const navPath = editEntry ? transactionReturnPath(params.get('return'), editEntry) : path;
+  const tab = navPath.startsWith('/settings') ? 'settings' :
+    navPath === '/transfer' || navPath === '/record/transfer' ? 'transfer' :
+    navPath.includes('cash-in') ? 'cash-in' : navPath.includes('cash-out') ? 'cash-out' : 'dashboard';
   document.querySelectorAll('[data-tab]').forEach((link) => {
     const active = link.dataset.tab === tab;
     link.classList.toggle('active', active);
@@ -535,7 +664,7 @@ function updateTransferPreview() {
 }
 async function onSubmit(event) {
   const form = event.target;
-  if (!['movement-form', 'banks-form', 'on-hand-form', 'new-bank-form', 'transfer-form'].includes(form.id)) return;
+  if (!['movement-form', 'banks-form', 'on-hand-form', 'new-bank-form', 'transfer-form', 'edit-transaction-form'].includes(form.id)) return;
   event.preventDefault();
   if (busy) return;
   busy = true;
@@ -545,7 +674,26 @@ async function onSubmit(event) {
   try {
     let destination;
     let successText;
-    if (form.id === 'transfer-form') {
+    if (form.id === 'edit-transaction-form') {
+      const id = Number(form.dataset.transactionId);
+      const original = snapshot.transactions.find((entry) => entry.id === id);
+      if (!original) throw new Error('Transaction no longer exists. Refresh and try again.');
+      const date = form.elements.namedItem('date').value;
+      const rawAmount = form.elements.namedItem('amount').value;
+      const amount = original.kind === 'adjustment' ?
+        parseAdjustmentAmount(rawAmount) : parsePesos(rawAmount);
+      let changes;
+      if (original.kind === 'transfer') {
+        changes = { fromId: form.elements.namedItem('from').value,
+          toId: form.elements.namedItem('to').value, amountCents: amount, date };
+      } else {
+        changes = { sourceId: form.elements.namedItem('source').value,
+          amountCents: original.kind === 'cash-out' ? -amount : amount, date };
+      }
+      await updateTransaction(id, changes);
+      destination = '#' + transactionReturnPath(form.dataset.return, original);
+      successText = 'Transaction updated.';
+    } else if (form.id === 'transfer-form') {
       const fromId = form.elements.namedItem('from-bank').value;
       const toId = form.elements.namedItem('to-account').value;
       const amountCents = parsePesos(form.elements.namedItem('transfer-amount').value);
@@ -625,6 +773,18 @@ async function start() {
       const option = event.target.closest('[data-bank-suggestion]');
       if (option) selectBankSuggestion(Number(option.dataset.bankSuggestion));
       else if (event.target.id !== 'bank-name') hideBankSuggestions();
+
+      const trigger = event.target.closest('[data-transaction-trigger]');
+      const deletion = event.target.closest('[data-delete-transaction]');
+      if (trigger) toggleTransactionActions(trigger);
+      else if (deletion) requestDeleteTransaction(deletion);
+      else if (!event.target.closest('.transaction-actions')) closeTransactionActions();
+    });
+    document.addEventListener('click', (event) => {
+      if (!event.target.closest('.transaction-item')) closeTransactionActions();
+    });
+    view.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') closeTransactionActions();
     });
     if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
       navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(() => {});

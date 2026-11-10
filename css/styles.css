@@ -102,6 +102,25 @@ button, a { touch-action: manipulation; }
 .btn-secondary-custom { background: #e9f5f5; color: var(--teal-dark); }
 .btn-secondary-custom:hover { background: #d8ecee; color: var(--teal-dark); }
 .transaction-row { display: flex; align-items: center; gap: 12px; padding: 15px; border: 1px solid var(--line); border-radius: 16px; background: white; box-shadow: var(--shadow); }
+/* Transaction cards reveal two in-place icon actions on tap or keyboard activation. */
+.transaction-item { position: relative; }
+.transaction-trigger { width: 100%; color: var(--ink); text-align: left; cursor: pointer; }
+.transaction-trigger:hover { border-color: #9cd4d7; }
+.transaction-actions {
+  position: absolute; z-index: 4; right: 12px; top: 50%; transform: translateY(-50%);
+  display: flex; align-items: center; gap: 6px; padding: 7px;
+  border: 1px solid #d7e6e9; border-radius: 14px; background: var(--white);
+  box-shadow: 0 8px 24px rgba(15, 64, 81, .18);
+}
+.transaction-actions[hidden] { display: none; }
+.transaction-action {
+  display: inline-flex; align-items: center; justify-content: center; width: 46px; height: 46px;
+  border-radius: 10px; border: 0; background: #e8f5f5; color: var(--teal-dark);
+  text-decoration: none; cursor: pointer;
+}
+.transaction-action:hover, .transaction-action:focus-visible { background: #d5ecee; color: var(--teal-dark); }
+.transaction-action.delete { background: #fff0f0; color: var(--danger); }
+.transaction-action.delete:hover, .transaction-action.delete:focus-visible { background: #ffdfdf; color: #8c2439; }
 .transaction-icon { display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 38px; background: #e8f7ef; color: var(--success); border-radius: 12px; font-weight: 900; }
 .transaction-icon.out { background: #fff0f0; color: var(--danger); }
 .transaction-icon.adjustment { background: #f0f2fb; color: #6272a3; }

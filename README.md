@@ -20,6 +20,8 @@ Serve the repository with a static HTTP server (for example, `python3 -m http.se
 - **Transfer** in the bottom navigation: record an atomic transfer from a bank to another bank or On-hand, with source bank, recipient account, amount, and date. Transfers appear in a dedicated history, the combined ledger, and both participating accounts' histories, without affecting total holdings or monthly cash-in/cash-out totals.
 - Atomic IndexedDB account/transaction writes. Cash-out and transfers cannot exceed the selected source balance. Transfers debit the source bank and credit the destination bank or On-hand within the same transaction.
 - Ledger sorted by transaction date (newest first), including traceable initialization or correction adjustments.
+- Tap any transaction card (cash in, cash out, transfer, or balance adjustment) to reveal in-place SVG Edit and Delete controls. Edit opens a dedicated form; Delete requires confirmation.
+- Editing and deleting atomically reverse the old transaction and recalculate the affected account balances. Changes that would create a negative balance are blocked to protect the ledger.
 - Local-first data persistence and a service worker that caches core application files after the first successful visit. Bootstrap styling comes from its CDN when online; custom CSS provides usable offline styling.
 
 ## Data model
