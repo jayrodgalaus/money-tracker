@@ -230,15 +230,15 @@ export async function addBank({ name, initialCents }) {
 }
 
 
-// Transfer moves funds between two distinct banks in a single IndexedDB
-// transaction. A transfer is internal: it does not affect total holdings or
+// Transfer moves funds from a bank to a different bank or On-hand in one
+// IndexedDB transaction. A transfer is internal: it does not affect total holdings or
 // monthly cash-in/cash-out statistics.
 export async function recordTransfer({ fromId, toId, amountCents, date }) {
   if (typeof fromId !== 'string' || !fromId || fromId.length > 128 ||
       typeof toId !== 'string' || !toId || toId.length > 128) {
-    throw new Error('Choose valid source and destination banks.');
+    throw new Error('Choose a valid source bank and recipient account.');
   }
-  if (fromId === toId) throw new Error('Choose two different banks.');
+  if (fromId === toId) throw new Error('Choose different source and destination accounts.');
   if (!Number.isSafeInteger(amountCents) || amountCents <= 0) {
     throw new Error('Enter an amount greater than zero.');
   }
@@ -266,8 +266,9 @@ export async function recordTransfer({ fromId, toId, amountCents, date }) {
       const toRequest = accounts.get(toId);
       toRequest.onsuccess = () => {
         const toAccount = toRequest.result;
-        if (!toAccount || toAccount.kind !== 'bank') {
-          fail('Choose a valid destination bank.');
+        if (!toAccount ||
+            (toAccount.kind !== 'bank' && !(toAccount.kind === 'cash' && toAccount.id === 'on-hand'))) {
+          fail('Choose a valid destination bank or On-hand.');
           return;
         }
         if (fromAccount.balanceCents < amountCents) {

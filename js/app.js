@@ -1,4 +1,4 @@
-import { ACCOUNT_DEFS, getSnapshot, parsePesos, recordMovement, recordTransfer, saveStartingBalances, addBank, todayLocal, validDate } from './db.js?v=7';
+import { ACCOUNT_DEFS, getSnapshot, parsePesos, recordMovement, recordTransfer, saveStartingBalances, addBank, todayLocal, validDate } from './db.js?v=8';
 import { loadBankDirectory } from './bank-directory.js?v=7';
 
 const view = document.getElementById('view');
@@ -234,34 +234,36 @@ function movementPage(kind) {
 function transferPage() {
   const transfers = snapshot.transactions.filter((entry) => entry.kind === 'transfer');
   return backLink('/dashboard', 'Dashboard') +
-    pageHeader('Money movement', 'Transfers', 'Move money between banks without changing your total amount.') +
+    pageHeader('Money movement', 'Transfers', 'Move money between banks or into On-hand without changing your total amount.') +
     '<a class="btn-primary-custom w-100" href="#/record/transfer">⇄ Record transfer</a>' +
     sectionHeading('Recorded transfers', transfers.length + ' entries') +
     transactionList(transfers, 'transfers');
 }
 function transferForm(params) {
   const banks = bankAccounts();
-  if (banks.length < 2) {
+  const destinations = [...banks, ...snapshot.accounts.filter(
+    (account) => account.id === 'on-hand' && account.kind === 'cash')];
+  if (!banks.length || destinations.length < 2) {
     return backLink('/transfer', 'Transfers') +
       pageHeader('New transaction', 'Record transfer') +
-      emptyState('Two banks required', 'Add at least two bank accounts to record a transfer.',
+      emptyState('Bank and recipient required', 'Add a bank and initialize On-hand to record a transfer.',
         '/settings/initialize/banks/add', 'Add a bank');
   }
   const requested = params.get('from');
   const fromId = banks.some((account) => account.id === requested) ? requested : banks[0].id;
-  const toId = banks.find((account) => account.id !== fromId).id;
-  const options = (chosen) => banks.map((account) =>
+  const toId = destinations.find((account) => account.id !== fromId).id;
+  const options = (accounts, chosen) => accounts.map((account) =>
     '<option value="' + escapeHtml(account.id) + '"' + (account.id === chosen ? ' selected' : '') +
     '>' + escapeHtml(account.name) + '</option>').join('');
   return backLink('/transfer', 'Transfers') +
-    pageHeader('New transaction', 'Record transfer', 'Move funds from one bank account to another.') +
+    pageHeader('New transaction', 'Record transfer', 'Move funds from a bank to another bank or On-hand cash.') +
     '<form id="transfer-form" class="form-panel" novalidate>' +
     '<div class="field"><label for="from-bank">From bank</label>' +
-    '<select class="form-select" id="from-bank" name="from-bank" required>' + options(fromId) + '</select>' +
+    '<select class="form-select" id="from-bank" name="from-bank" required>' + options(banks, fromId) + '</select>' +
     '<p class="field-help" id="transfer-available">Available: ' +
     pesos(getAccount(fromId)?.balanceCents || 0) + '</p></div>' +
-    '<div class="field"><label for="to-bank">To bank</label>' +
-    '<select class="form-select" id="to-bank" name="to-bank" required>' + options(toId) + '</select></div>' +
+    '<div class="field"><label for="to-account">To account</label>' +
+    '<select class="form-select" id="to-account" name="to-account" required>' + options(destinations, toId) + '</select></div>' +
     '<div class="field"><label for="transfer-amount">Amount (₱)</label>' +
     '<input class="form-control" type="number" id="transfer-amount" name="transfer-amount" ' +
     'min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" required></div>' +
@@ -510,12 +512,12 @@ function updateTransferPreview() {
   const form = activePanel?.querySelector('#transfer-form');
   if (!form) return;
   const fromId = form.elements.namedItem('from-bank').value;
-  const toId = form.elements.namedItem('to-bank').value;
+  const toId = form.elements.namedItem('to-account').value;
   const fromAccount = snapshot.accounts.find((account) => account.id === fromId && account.kind === 'bank');
   const available = form.querySelector('#transfer-available');
   if (available) available.textContent = 'Available: ' + pesos(fromAccount?.balanceCents || 0);
   if (fromId === toId) {
-    formError(form, 'Choose two different banks.');
+    formError(form, 'Choose different source and destination accounts.');
     return;
   }
   const raw = form.elements.namedItem('transfer-amount').value;
@@ -545,7 +547,7 @@ async function onSubmit(event) {
     let successText;
     if (form.id === 'transfer-form') {
       const fromId = form.elements.namedItem('from-bank').value;
-      const toId = form.elements.namedItem('to-bank').value;
+      const toId = form.elements.namedItem('to-account').value;
       const amountCents = parsePesos(form.elements.namedItem('transfer-amount').value);
       const date = form.elements.namedItem('transfer-date').value;
       await recordTransfer({ fromId, toId, amountCents, date });
@@ -606,7 +608,7 @@ async function start() {
     view.addEventListener('submit', onSubmit);
     view.addEventListener('change', (event) => {
       if (event.target.id === 'source') updateAvailable();
-      if (event.target.id === 'from-bank' || event.target.id === 'to-bank') updateTransferPreview();
+      if (event.target.id === 'from-bank' || event.target.id === 'to-account') updateTransferPreview();
     });
     view.addEventListener('input', (event) => {
       if (event.target.id === 'amount') updateAvailable();
