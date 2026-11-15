@@ -230,13 +230,16 @@ export async function addBank({ name, initialCents }) {
 }
 
 
-// Transfer moves funds from a bank to a different bank or On-hand in one
-// IndexedDB transaction. A transfer is internal: it does not affect total holdings or
-// monthly cash-in/cash-out statistics.
+// Transfers move money between two distinct tracked accounts (banks or On-hand)
+// atomically. They don't count toward cash-in/out totals or change total holdings.
+function isTransferAccount(account) {
+  return !!account && (account.kind === 'bank' ||
+    (account.id === 'on-hand' && account.kind === 'cash'));
+}
 export async function recordTransfer({ fromId, toId, amountCents, date }) {
   if (typeof fromId !== 'string' || !fromId || fromId.length > 128 ||
       typeof toId !== 'string' || !toId || toId.length > 128) {
-    throw new Error('Choose a valid source bank and recipient account.');
+    throw new Error('Choose valid source and destination accounts.');
   }
   if (fromId === toId) throw new Error('Choose different source and destination accounts.');
   if (!Number.isSafeInteger(amountCents) || amountCents <= 0) {
@@ -258,16 +261,15 @@ export async function recordTransfer({ fromId, toId, amountCents, date }) {
     const fromRequest = accounts.get(fromId);
     fromRequest.onsuccess = () => {
       const fromAccount = fromRequest.result;
-      if (!fromAccount || fromAccount.kind !== 'bank') {
-        fail('Choose a valid bank to transfer from.');
+      if (!isTransferAccount(fromAccount)) {
+        fail('Choose a valid source bank or On-hand.');
         return;
       }
 
       const toRequest = accounts.get(toId);
       toRequest.onsuccess = () => {
         const toAccount = toRequest.result;
-        if (!toAccount ||
-            (toAccount.kind !== 'bank' && !(toAccount.kind === 'cash' && toAccount.id === 'on-hand'))) {
+        if (!isTransferAccount(toAccount)) {
           fail('Choose a valid destination bank or On-hand.');
           return;
         }
@@ -318,12 +320,11 @@ function editedTransaction(original, changes, accounts) {
   const validAccount = (id) => typeof id === 'string' && accounts.has(id);
   if (original.kind === 'transfer') {
     const { fromId, toId, amountCents } = changes;
-    if (!validAccount(fromId) || accounts.get(fromId).kind !== 'bank') {
-      throw new Error('Choose a valid source bank.');
+    if (!validAccount(fromId) || !isTransferAccount(accounts.get(fromId))) {
+      throw new Error('Choose a valid source bank or On-hand.');
     }
     const destination = accounts.get(toId);
-    if (!validAccount(toId) || !(destination.kind === 'bank' ||
-      (toId === 'on-hand' && destination.kind === 'cash'))) {
+    if (!validAccount(toId) || !isTransferAccount(destination)) {
       throw new Error('Choose a valid recipient.');
     }
     if (fromId === toId) throw new Error('Choose different source and destination accounts.');

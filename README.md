@@ -17,8 +17,8 @@ Serve the repository with a static HTTP server (for example, `python3 -m http.se
 - **Settings → Initialize → Banks** to set each bank balance or add another bank using the centered **+** button, and **Settings → Initialize → On-hand** for physical cash.
 - Add a new bank with an initial balance and autocomplete suggestions from all 451 institution names in the uploaded BankDirectory.xlsx. You can also enter any custom bank name; the directory does not restrict input.
 - Cash-in/cash-out forms with source, amount, and date (today by default).
-- **Transfer** in the bottom navigation: record an atomic transfer from a bank to another bank or On-hand, with source bank, recipient account, amount, and date. Transfers appear in a dedicated history, the combined ledger, and both participating accounts' histories, without affecting total holdings or monthly cash-in/cash-out totals.
-- Atomic IndexedDB account/transaction writes. Cash-out and transfers cannot exceed the selected source balance. Transfers debit the source bank and credit the destination bank or On-hand within the same transaction.
+- **Transfer** in the bottom navigation: record an atomic transfer between banks and On-hand in either direction, with source account, recipient account, amount, and date. Transfers appear in a dedicated history, the combined ledger, and both participating accounts' histories, without affecting total holdings or monthly cash-in/cash-out totals.
+- Atomic IndexedDB account/transaction writes. Cash-out and transfers cannot exceed the selected source balance. Transfers debit the source account and credit the destination bank or On-hand within the same transaction.
 - Ledger sorted by transaction date (newest first), including traceable initialization or correction adjustments.
 - Tap any transaction card (cash in, cash out, transfer, or balance adjustment) to reveal in-place SVG Edit and Delete controls. Edit opens a dedicated form; Delete requires confirmation.
 - Editing and deleting atomically reverse the old transaction and recalculate the affected account balances. Changes that would create a negative balance are blocked to protect the ledger.
