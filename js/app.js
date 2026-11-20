@@ -17,6 +17,49 @@ let transitionTimeout;
 let lastScrollY = window.scrollY;
 let suggestionMatches = [];
 let selectedSuggestion = -1;
+let offlineSetupFailed = false;
+
+// A service worker controls the installed app only after its shell is cached.
+function updateOfflineStatus() {
+  const panel = activePanel?.querySelector('#offline-status');
+  if (!panel) return;
+  const heading = panel.querySelector('strong');
+  const description = panel.querySelector('small');
+  const ready = 'serviceWorker' in navigator && !!navigator.serviceWorker.controller;
+  const secure = location.protocol === 'https:' ||
+    location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+
+  if (ready) {
+    heading.textContent = navigator.onLine ? 'Ready for offline use' : 'Working offline';
+    description.textContent = 'Balances, transactions, transfers, and the bank directory are available on this device without internet.';
+  } else if (!secure || !('serviceWorker' in navigator)) {
+    heading.textContent = 'Offline access unavailable';
+    description.textContent = 'Offline access requires a supported browser and a secure HTTPS connection.';
+  } else if (offlineSetupFailed || !navigator.onLine) {
+    heading.textContent = 'Offline setup not completed';
+    description.textContent = 'Connect to the internet and reopen the app to finish downloading its files.';
+  } else {
+    heading.textContent = 'Preparing offline access';
+    description.textContent = 'Keep the app open with internet until offline setup finishes.';
+  }
+}
+
+function setupOfflineAccess() {
+  window.addEventListener('online', updateOfflineStatus);
+  window.addEventListener('offline', updateOfflineStatus);
+  if (!('serviceWorker' in navigator) ||
+      !(location.protocol === 'https:' ||
+        location.hostname === 'localhost' || location.hostname === '127.0.0.1')) return;
+
+  navigator.serviceWorker.addEventListener('controllerchange', updateOfflineStatus);
+  navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
+    .then(() => navigator.serviceWorker.ready)
+    .then(updateOfflineStatus)
+    .catch(() => {
+      offlineSetupFailed = true;
+      updateOfflineStatus();
+    });
+}
 
 // Keep the bottom tabs available when scrolling upward or navigating.
 function showBottomNav() {
@@ -336,6 +379,8 @@ function settingsPage() {
     '<div class="settings-list"><a class="settings-link" href="#/settings/initialize">' +
     '<span class="account-avatar cash" aria-hidden="true">₱</span><span class="account-description"><strong>Initialize balances' +
     '<small>Set or correct bank and on-hand amounts</small></strong></span><span class="chevron" aria-hidden="true">›</span></a></div>' +
+    '<div class="info-panel offline-panel" id="offline-status" role="status" aria-live="polite">' +
+    '<strong>Checking offline access…</strong><small>Checking saved app files.</small></div>' +
     '<div class="info-panel">All amounts and transactions are saved only in this browser with IndexedDB. Clearing browser site data can erase them.</div>';
 }
 function initializePage() {
@@ -606,6 +651,7 @@ function render(previousScroll = 0) {
     if (active) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');
   });
+  updateOfflineStatus();
 }
 function notify(text, error = false) {
   clearTimeout(noticeTimeout);
@@ -741,6 +787,7 @@ async function onSubmit(event) {
 }
 async function start() {
   stage.innerHTML = '<p class="page-subtitle">Loading your money tracker…</p>';
+  setupOfflineAccess();
   try {
     snapshot = await getSnapshot();
     render();
@@ -788,9 +835,6 @@ async function start() {
     view.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') closeTransactionActions();
     });
-    if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-      navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(() => {});
-    }
   } catch (error) {
     stage.innerHTML = pageHeader('Storage unavailable', 'Unable to open Money Tracker') +
       '<div class="empty-state">' + escapeHtml(error.message || 'Could not open your local money data.') +

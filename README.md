@@ -22,7 +22,16 @@ Serve the repository with a static HTTP server (for example, `python3 -m http.se
 - Ledger sorted by transaction date (newest first), including traceable initialization or correction adjustments.
 - Tap any transaction card (cash in, cash out, transfer, or balance adjustment) to reveal in-place SVG Edit and Delete controls. Edit opens a dedicated form; Delete requires confirmation.
 - Editing and deleting atomically reverse the old transaction and recalculate the affected account balances. Changes that would create a negative balance are blocked to protect the ledger.
-- Local-first data persistence and a service worker that caches core application files after the first successful visit. Bootstrap styling comes from its CDN when online; custom CSS provides usable offline styling.
+- Local-first data persistence and a service worker that precaches all essential application files, including the offline bank directory, after an online visit. It also caches Bootstrap 5.3.8 CSS when available, with custom CSS fallbacks if the CDN cannot be reached.
+- **Settings** shows whether the installed app is ready to use offline.
+
+## Using the installed app offline
+
+1. After the latest version is published, open your **already-installed app** while connected to the internet.
+2. Go to **Settings** and confirm **Ready for offline use**. If it says *Preparing offline access*, keep the app open online until the message changes.
+3. Close and reopen the app with airplane mode enabled to verify that the dashboard, balances, bank directory, and transaction forms remain usable. Reinstallation is not required.
+
+The service worker saves HTML, JS, CSS, manifest and icon files on the device; it never caches or uploads account data. All balances and transaction writes continue to use IndexedDB while offline. App updates require connectivity, and the device/browser may remove offline files or IndexedDB records under storage pressure. Data in a home-screen installation may be separate from browser-tab storage on some platforms.
 
 ## Data model
 
