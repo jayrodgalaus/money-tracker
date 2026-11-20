@@ -188,6 +188,12 @@ button, a { touch-action: manipulation; }
 .status-message { position: fixed; top: calc(12px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 25; max-width: min(90vw,420px); border-radius: 13px; padding: 14px 17px; background: #153f54; color: #fff; box-shadow: var(--shadow); font-size: .85rem; }
 .status-message.error { background: #8f2941; }
 .status-message[hidden] { display: none; }
+/* Fallbacks for the few Bootstrap utilities used when CDN CSS is not cached. */
+.w-100 { width: 100% !important; }
+.mt-2 { margin-top: .5rem !important; }
+.mt-3 { margin-top: 1rem !important; }
+.offline-panel strong { display: block; color: var(--ink); font-size: .9rem; }
+.offline-panel small { display: block; margin-top: 5px; color: var(--muted); font-size: .76rem; line-height: 1.5; }
 :focus-visible { outline: 3px solid #53c8c8; outline-offset: 3px; }
 @media (min-width: 768px) { .app-container { padding-left: 28px; padding-right: 28px; } .page-content { padding-top: 36px; } .summary-grid { gap: 16px; } .account-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } .nav-inner a { min-height: 64px; } }
 @media (prefers-reduced-motion: reduce) {
